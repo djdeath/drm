@@ -58,6 +58,7 @@
 #define I915_ERROR_UEVENT		"ERROR"
 #define I915_RESET_UEVENT		"RESET"
 
+
 /* Each region is a minimum of 16k, and there are at most 255 of them.
  */
 #define I915_NR_TEX_REGIONS 255	/* table size 2k - maximum due to use
@@ -226,6 +227,7 @@ typedef struct _drm_i915_sarea {
 #define DRM_I915_GEM_USERPTR		0x33
 #define DRM_I915_GEM_CONTEXT_GETPARAM	0x34
 #define DRM_I915_GEM_CONTEXT_SETPARAM	0x35
+#define DRM_I915_PERF_OPEN		0x36
 
 #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
 #define DRM_IOCTL_I915_FLUSH		DRM_IO ( DRM_COMMAND_BASE + DRM_I915_FLUSH)
@@ -279,6 +281,7 @@ typedef struct _drm_i915_sarea {
 #define DRM_IOCTL_I915_GEM_USERPTR			DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_USERPTR, struct drm_i915_gem_userptr)
 #define DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_GETPARAM, struct drm_i915_gem_context_param)
 #define DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_SETPARAM, struct drm_i915_gem_context_param)
+#define DRM_IOCTL_I915_PERF_OPEN	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_PERF_OPEN, struct drm_i915_perf_open_param)
 
 /* Allow drivers to submit batchbuffers directly to hardware, relying
  * on the security mechanisms provided by hardware.
@@ -350,6 +353,8 @@ typedef struct drm_i915_irq_wait {
 #define I915_PARAM_REVISION              32
 #define I915_PARAM_SUBSLICE_TOTAL	 33
 #define I915_PARAM_EU_TOTAL		 34
+#define I915_PARAM_SLICE_MASK		 37
+#define I915_PARAM_SUBSLICE_MASK	 38
 
 typedef struct drm_i915_getparam {
 	int param;
@@ -1102,6 +1107,147 @@ struct drm_i915_gem_context_param {
 	__u64 param;
 #define I915_CONTEXT_PARAM_BAN_PERIOD 0x1
 	__u64 value;
+};
+
+enum drm_i915_perf_event_type {
+	I915_PERF_OA_EVENT = 1,
+
+	I915_PERF_EVENT_TYPE_MAX	/* non-ABI */
+};
+
+enum drm_i915_oa_format {
+	I915_OA_FORMAT_A13	    = 0, /* HSW only */
+	I915_OA_FORMAT_A29	    = 1, /* HSW only */
+	I915_OA_FORMAT_A13_B8_C8    = 2, /* HSW only */
+	I915_OA_FORMAT_B4_C8	    = 4, /* HSW only */
+	I915_OA_FORMAT_A45_B8_C8    = 5, /* HSW only */
+	I915_OA_FORMAT_B4_C8_A16    = 6, /* HSW only */
+	I915_OA_FORMAT_C4_B8	    = 7, /* HSW+ */
+
+	/* Gen8+ */
+	I915_OA_FORMAT_A12		    = 8,
+	I915_OA_FORMAT_A12_B8_C8	    = 9,
+	I915_OA_FORMAT_A32u40_A4u32_B8_C8   = 10,
+
+	I915_OA_FORMAT_MAX	    /* non-ABI */
+};
+
+enum drm_i915_oa_set {
+	I915_OA_METRICS_SET_3D = 1,
+
+	I915_OA_METRICS_SET_COMPUTE,
+	I915_OA_METRICS_SET_COMPUTE_EXTENDED,
+	I915_OA_METRICS_SET_MEMORY_READS,
+	I915_OA_METRICS_SET_MEMORY_WRITES,
+	I915_OA_METRICS_SET_SAMPLER_BALANCE,
+
+	I915_OA_METRICS_SET_RENDER_PIPE_PROFILE,
+	I915_OA_METRICS_SET_COMPUTE_L3_CACHE,
+	I915_OA_METRICS_SET_DATA_PORT_READS_COALESCING,
+	I915_OA_METRICS_SET_DATA_PORT_WRITES_COALESCING,
+	I915_OA_METRICS_SET_L3_1,
+	I915_OA_METRICS_SET_L3_2,
+	I915_OA_METRICS_SET_L3_3,
+	I915_OA_METRICS_SET_L3_4,
+	I915_OA_METRICS_SET_RASTERIZER_AND_PIXEL_BACKEND,
+	I915_OA_METRICS_SET_SAMPLER_1,
+	I915_OA_METRICS_SET_SAMPLER_2,
+	I915_OA_METRICS_SET_TDL_1,
+	I915_OA_METRICS_SET_TDL_2,
+
+	I915_OA_METRICS_SET_HDC_AND_SF,
+	I915_OA_METRICS_SET_SAMPLER,
+
+	I915_OA_METRICS_SET_MAX			/* non-ABI */
+};
+
+#define I915_OA_FLAG_PERIODIC		(1<<0)
+
+/* Note: same versioning scheme as struct perf_event_attr
+ *
+ * Userspace specified size defines ABI version and kernel
+ * zero extends to size of latest version. If userspace
+ * gives a larger structure than the kernel expects then
+ * kernel asserts that all unknown fields are zero.
+ */
+struct drm_i915_perf_oa_attr {
+	__u32 size;
+
+	__u32 flags;
+
+	__u32 metrics_set;
+	__u32 oa_format;
+	__u32 oa_timer_exponent;
+};
+
+#define I915_PERF_FLAG_FD_CLOEXEC	(1<<0)
+#define I915_PERF_FLAG_FD_NONBLOCK	(1<<1)
+#define I915_PERF_FLAG_SINGLE_CONTEXT	(1<<2)
+#define I915_PERF_FLAG_DISABLED         (1<<3)
+
+#define I915_PERF_SAMPLE_OA_REPORT	(1<<0)
+#define I915_PERF_SAMPLE_CTXID		(1<<1)
+#define I915_PERF_SAMPLE_TIMESTAMP	(1<<2)
+
+struct drm_i915_perf_open_param {
+	/* Such as I915_PERF_OA_EVENT */
+	__u32 type;
+
+	/* CLOEXEC, NONBLOCK, SINGLE_CONTEXT, PERIODIC... */
+	__u32 flags;
+
+	/* What to include in samples */
+	__u64 sample_flags;
+
+	/* A specific context to profile */
+	__u32 ctx_id;
+
+	/* Event specific attributes */
+	__u64 attr;
+
+	/* OUT */
+	__u32 fd;
+};
+
+#define I915_PERF_IOCTL_ENABLE	_IO('i', 0x0)
+#define I915_PERF_IOCTL_DISABLE	_IO('i', 0x1)
+
+/* Note: same as struct perf_event_header */
+struct drm_i915_perf_event_header {
+	__u32 type;
+	__u16 misc;
+	__u16 size;
+};
+
+enum drm_i915_perf_record_type {
+
+	/*
+	 * struct {
+	 *     struct drm_i915_perf_event_header header;
+	 *
+	 *     { u32 ctx_id; }	    && I915_PERF_SAMPLE_CTXID
+	 *     { u32 timestamp; }   && I915_PERF_SAMPLE_TIMESTAMP
+	 *     { u32 oa_report[]; } && I915_PERF_SAMPLE_OA_REPORT
+	 *
+	 * };
+	 */
+	DRM_I915_PERF_RECORD_SAMPLE = 1,
+
+	/*
+	 * Indicates that one or more OA reports was not written
+	 * by the hardware.
+	 */
+	DRM_I915_PERF_RECORD_OA_REPORT_LOST = 2,
+
+	/*
+	 * Indicates that the internal circular buffer that Gen
+	 * graphics writes OA reports into has filled, which may
+	 * either mean that old reports could be overwritten or
+	 * subsequent reports lost until the buffer is cleared.
+	 */
+	DRM_I915_PERF_RECORD_OA_BUFFER_OVERFLOW = 3,
+
+	DRM_I915_PERF_RECORD_MAX /* non-ABI */
 };
 
 #endif /* _I915_DRM_H_ */
