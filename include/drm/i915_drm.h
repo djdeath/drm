@@ -58,6 +58,7 @@
 #define I915_ERROR_UEVENT		"ERROR"
 #define I915_RESET_UEVENT		"RESET"
 
+
 /* Each region is a minimum of 16k, and there are at most 255 of them.
  */
 #define I915_NR_TEX_REGIONS 255	/* table size 2k - maximum due to use
@@ -226,6 +227,7 @@ typedef struct _drm_i915_sarea {
 #define DRM_I915_GEM_USERPTR		0x33
 #define DRM_I915_GEM_CONTEXT_GETPARAM	0x34
 #define DRM_I915_GEM_CONTEXT_SETPARAM	0x35
+#define DRM_I915_PERF_OPEN		0x36
 
 #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
 #define DRM_IOCTL_I915_FLUSH		DRM_IO ( DRM_COMMAND_BASE + DRM_I915_FLUSH)
@@ -279,6 +281,7 @@ typedef struct _drm_i915_sarea {
 #define DRM_IOCTL_I915_GEM_USERPTR			DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_USERPTR, struct drm_i915_gem_userptr)
 #define DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_GETPARAM, struct drm_i915_gem_context_param)
 #define DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_CONTEXT_SETPARAM, struct drm_i915_gem_context_param)
+#define DRM_IOCTL_I915_PERF_OPEN	DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_PERF_OPEN, struct drm_i915_perf_open_param)
 
 /* Allow drivers to submit batchbuffers directly to hardware, relying
  * on the security mechanisms provided by hardware.
@@ -350,6 +353,8 @@ typedef struct drm_i915_irq_wait {
 #define I915_PARAM_REVISION              32
 #define I915_PARAM_SUBSLICE_TOTAL	 33
 #define I915_PARAM_EU_TOTAL		 34
+#define I915_PARAM_SLICE_MASK		 37
+#define I915_PARAM_SUBSLICE_MASK	 38
 
 typedef struct drm_i915_getparam {
 	int param;
@@ -1102,6 +1107,163 @@ struct drm_i915_gem_context_param {
 	__u64 param;
 #define I915_CONTEXT_PARAM_BAN_PERIOD 0x1
 	__u64 value;
+};
+
+
+enum drm_i915_oa_format {
+	I915_OA_FORMAT_A13	    = 0, /* HSW only */
+	I915_OA_FORMAT_A29	    = 1, /* HSW only */
+	I915_OA_FORMAT_A13_B8_C8    = 2, /* HSW only */
+	I915_OA_FORMAT_B4_C8	    = 4, /* HSW only */
+	I915_OA_FORMAT_A45_B8_C8    = 5, /* HSW only */
+	I915_OA_FORMAT_B4_C8_A16    = 6, /* HSW only */
+	I915_OA_FORMAT_C4_B8	    = 7, /* HSW+ */
+
+	/* Gen8+ */
+	I915_OA_FORMAT_A12		    = 8,
+	I915_OA_FORMAT_A12_B8_C8	    = 9,
+	I915_OA_FORMAT_A32u40_A4u32_B8_C8   = 10,
+
+	I915_OA_FORMAT_MAX	    /* non-ABI */
+};
+
+enum drm_i915_oa_set {
+	I915_OA_METRICS_SET_3D = 1,
+
+	I915_OA_METRICS_SET_COMPUTE,
+	I915_OA_METRICS_SET_COMPUTE_EXTENDED,
+	I915_OA_METRICS_SET_MEMORY_READS,
+	I915_OA_METRICS_SET_MEMORY_WRITES,
+	I915_OA_METRICS_SET_SAMPLER_BALANCE,
+
+	I915_OA_METRICS_SET_RENDER_PIPE_PROFILE,
+	I915_OA_METRICS_SET_COMPUTE_L3_CACHE,
+	I915_OA_METRICS_SET_DATA_PORT_READS_COALESCING,
+	I915_OA_METRICS_SET_DATA_PORT_WRITES_COALESCING,
+	I915_OA_METRICS_SET_L3_1,
+	I915_OA_METRICS_SET_L3_2,
+	I915_OA_METRICS_SET_L3_3,
+	I915_OA_METRICS_SET_L3_4,
+	I915_OA_METRICS_SET_RASTERIZER_AND_PIXEL_BACKEND,
+	I915_OA_METRICS_SET_SAMPLER_1,
+	I915_OA_METRICS_SET_SAMPLER_2,
+	I915_OA_METRICS_SET_TDL_1,
+	I915_OA_METRICS_SET_TDL_2,
+
+	I915_OA_METRICS_SET_HDC_AND_SF,
+	I915_OA_METRICS_SET_SAMPLER,
+
+	I915_OA_METRICS_SET_MAX                 /* non-ABI */
+};
+
+#define I915_PERF_FLAG_FD_CLOEXEC	(1<<0)
+#define I915_PERF_FLAG_FD_NONBLOCK	(1<<1)
+#define I915_PERF_FLAG_DISABLED		(1<<2)
+
+enum drm_i915_perf_property_id {
+	/**
+	 * Open the stream for a specific context handle (as used with
+	 * execbuffer2). A stream opened for a specific context this way
+	 * won't typically require root privileges.
+	 */
+	DRM_I915_PERF_CTX_HANDLE_PROP = 1,
+
+	/**
+	 * A value of 1 requests the inclusion of raw OA unit reports as
+	 * part of stream samples.
+	 */
+	DRM_I915_PERF_SAMPLE_OA_PROP,
+
+	/**
+	 * The value specifies which set of OA unit metrics should be
+	 * be configured, defining the contents of any OA unit reports.
+	 */
+	DRM_I915_PERF_OA_METRICS_SET_PROP,
+
+	/**
+	 * The value specifies the size and layout of OA unit reports.
+	 */
+	DRM_I915_PERF_OA_FORMAT_PROP,
+
+	/**
+	 * Specifying this property implicitly requests periodic OA unit
+	 * sampling and (at least on Haswell) the sampling frequency is derived
+	 * from this exponent as follows:
+	 *
+	 *   80ns * 2^(period_exponent + 1)
+	 */
+	DRM_I915_PERF_OA_EXPONENT_PROP,
+
+	DRM_I915_PERF_PROP_MAX /* non-ABI */
+};
+
+struct drm_i915_perf_open_param {
+	/** CLOEXEC, NONBLOCK... */
+	__u32 flags;
+
+	/**
+	 * Pointer to array of u64 (id, value) pairs configuring the stream
+	 * to open.
+	 */
+	__u64 properties;
+
+	/** The number of u64 (id, value) pairs */
+	__u32 n_properties;
+
+	/* OUT */
+	__u32 fd;
+};
+
+#define I915_PERF_IOCTL_ENABLE	_IO('i', 0x0)
+#define I915_PERF_IOCTL_DISABLE	_IO('i', 0x1)
+
+/**
+ * Common to all i915 perf records
+ */
+struct drm_i915_perf_record_header {
+	__u32 type;
+	__u16 pad;
+	__u16 size;
+};
+
+enum drm_i915_perf_record_type {
+
+	/**
+	 * Samples are the work horse record type whose contents are extensible
+	 * and defined when opening an i915 perf stream based on the given
+	 * properties.
+	 *
+	 * Boolean properties following the naming convention
+	 * DRM_I915_PERF_SAMPLE_xyz_PROP request the inclusion of 'xyz' data in
+	 * every sample.
+	 *
+	 * The order of these sample properties given by userspace has no
+	 * affect on the ordering of data within a sample. The order is
+	 * documented here.
+	 *
+	 * struct {
+	 *     struct drm_i915_perf_record_header header;
+	 *
+	 *     { u32 oa_report[]; } && DRM_I915_PERF_SAMPLE_OA_PROP
+	 * };
+	 */
+	DRM_I915_PERF_RECORD_SAMPLE = 1,
+
+	/*
+	 * Indicates that one or more OA reports was not written
+	 * by the hardware.
+	 */
+	DRM_I915_PERF_RECORD_OA_REPORT_LOST = 2,
+
+	/*
+	 * Indicates that the internal circular buffer that Gen
+	 * graphics writes OA reports into has filled, which may
+	 * either mean that old reports could be overwritten or
+	 * subsequent reports lost until the buffer is cleared.
+	 */
+	DRM_I915_PERF_RECORD_OA_BUFFER_OVERFLOW = 3,
+
+	DRM_I915_PERF_RECORD_MAX /* non-ABI */
 };
 
 #endif /* _I915_DRM_H_ */
