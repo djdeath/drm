@@ -71,6 +71,11 @@
 #define I915_OA_FORMAT_B4_C8_A16_HSW	6
 #define I915_OA_FORMAT_C4_B8_HSW	7
 
+#define I915_OA_FORMAT_A12_BDW		0
+#define I915_OA_FORMAT_A12_B8_C8_BDW	2
+#define I915_OA_FORMAT_A36_B8_C8_BDW	5
+#define I915_OA_FORMAT_C4_B8_BDW	7
+
 #define I915_OA_METRICS_SET_3D			1
 #define I915_OA_METRICS_SET_COMPUTE		2
 #define I915_OA_METRICS_SET_COMPUTE_EXTENDED	3
@@ -414,6 +419,8 @@ typedef struct drm_i915_irq_wait {
 #define I915_PARAM_REVISION              32
 #define I915_PARAM_SUBSLICE_TOTAL	 33
 #define I915_PARAM_EU_TOTAL		 34
+#define I915_PARAM_SLICE_MASK		 35
+#define I915_PARAM_SUBSLICE_MASK	 36
 
 typedef struct drm_i915_getparam {
 	int param;
