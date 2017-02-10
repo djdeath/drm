@@ -412,6 +412,20 @@ typedef struct drm_i915_irq_wait {
  */
 #define I915_PARAM_HAS_EXEC_FENCE	 44
 
+/* Query whether DRM_I915_GEM_EXECBUFFER2 supports the ability to capture
+ * user specified bufffers for post-mortem debugging of GPU hangs. See
+ * EXEC_OBJECT_CAPTURE.
+ */
+#define I915_PARAM_HAS_EXEC_CAPTURE	 45
+
+/* Query the mask of slices available for this system */
+#define I915_PARAM_SLICE_MASK		 46
+
+/* Assuming it's uniform for each slice, this queries the mask of subslices
+ * per-slice for this system.
+ */
+#define I915_PARAM_SUBSLICE_MASK	 47
+
 typedef struct drm_i915_getparam {
 	__s32 param;
 	/*
@@ -432,6 +446,16 @@ typedef struct drm_i915_setparam {
 	int param;
 	int value;
 } drm_i915_setparam_t;
+
+union drm_i915_gem_param_sseu {
+	struct {
+		__u8 slice_mask;
+		__u8 subslice_mask;
+		__u8 min_eu_per_subslice;
+		__u8 max_eu_per_subslice;
+	} packed;
+	__u64 value;
+};
 
 /* A memory manager for regions of shared memory:
  */
@@ -666,6 +690,8 @@ struct drm_i915_gem_relocation_entry {
 #define I915_GEM_DOMAIN_VERTEX		0x00000020
 /** GTT domain - aperture and scanout */
 #define I915_GEM_DOMAIN_GTT		0x00000040
+/** WC domain - uncached access */
+#define I915_GEM_DOMAIN_WC		0x00000080
 /** @} */
 
 struct drm_i915_gem_exec_object {
@@ -773,8 +799,15 @@ struct drm_i915_gem_exec_object2 {
  * I915_PARAM_HAS_EXEC_FENCE to order execbufs and execute them asynchronously.
  */
 #define EXEC_OBJECT_ASYNC		(1<<6)
+/* Request that the contents of this execobject be copied into the error
+ * state upon a GPU hang involving this batch for post-mortem debugging.
+ * These buffers are recorded in no particular order as "user" in
+ * /sys/class/drm/cardN/error. Query I915_PARAM_HAS_EXEC_CAPTURE to see
+ * if the kernel supports this flag.
+ */
+#define EXEC_OBJECT_CAPTURE		(1<<7)
 /* All remaining bits are MBZ and RESERVED FOR FUTURE USE */
-#define __EXEC_OBJECT_UNKNOWN_FLAGS -(EXEC_OBJECT_ASYNC<<1)
+#define __EXEC_OBJECT_UNKNOWN_FLAGS -(EXEC_OBJECT_CAPTURE<<1)
 	__u64 flags;
 
 	union {
@@ -1289,17 +1322,34 @@ struct drm_i915_gem_context_param {
 #define I915_CONTEXT_PARAM_GTT_SIZE	0x3
 #define I915_CONTEXT_PARAM_NO_ERROR_CAPTURE	0x4
 #define I915_CONTEXT_PARAM_BANNABLE	0x5
+#define I915_CONTEXT_PARAM_SSEU		0x6
+#define I915_CONTEXT_PARAM_HW_ID	0x7
+	__u64 value;
+};
+
+union drm_i915_gem_context_param_sseu {
+	struct {
+		__u8 slice_mask;
+		__u8 subslice_mask;
+		__u8 min_eu_per_subslice;
+		__u8 max_eu_per_subslice;
+	} packed;
 	__u64 value;
 };
 
 enum drm_i915_oa_format {
-	I915_OA_FORMAT_A13 = 1,
-	I915_OA_FORMAT_A29,
-	I915_OA_FORMAT_A13_B8_C8,
-	I915_OA_FORMAT_B4_C8,
-	I915_OA_FORMAT_A45_B8_C8,
-	I915_OA_FORMAT_B4_C8_A16,
-	I915_OA_FORMAT_C4_B8,
+	I915_OA_FORMAT_A13 = 1,	    /* HSW only */
+	I915_OA_FORMAT_A29,	    /* HSW only */
+	I915_OA_FORMAT_A13_B8_C8,   /* HSW only */
+	I915_OA_FORMAT_B4_C8,	    /* HSW only */
+	I915_OA_FORMAT_A45_B8_C8,   /* HSW only */
+	I915_OA_FORMAT_B4_C8_A16,   /* HSW only */
+	I915_OA_FORMAT_C4_B8,	    /* HSW+ */
+
+	/* Gen8+ */
+	I915_OA_FORMAT_A12,
+	I915_OA_FORMAT_A12_B8_C8,
+	I915_OA_FORMAT_A32u40_A4u32_B8_C8,
 
 	I915_OA_FORMAT_MAX	    /* non-ABI */
 };
@@ -1337,6 +1387,23 @@ enum drm_i915_perf_property_id {
 	 *   80ns * 2^(period_exponent + 1)
 	 */
 	DRM_I915_PERF_PROP_OA_EXPONENT,
+
+	/**
+	 * Specifying this property will alterate the behavior of the i915
+	 * driver, by forcing the driver to restore the NOA configuration of
+	 * the OA unit between context switches. You should only use this flag
+	 * if you think that that at least one application running on the
+	 * system is using a SSEU configurations with disabled
+	 * slices/subslices.
+	 */
+	DRM_I915_PERF_PROP_NOA_RESTORE,
+
+	/**
+	 * Specifying this property will lead the perf driver to insert sseu
+	 * change reports (see @DRM_I915_PERF_RECORD_SSEU_CHANGE) in the
+	 * stream of reports.
+	 */
+	DRM_I915_PERF_PROP_SSEU_CHANGE,
 
 	DRM_I915_PERF_PROP_MAX /* non-ABI */
 };
@@ -1408,7 +1475,7 @@ enum drm_i915_perf_record_type {
 	 */
 	DRM_I915_PERF_RECORD_SAMPLE = 1,
 
-	/*
+	/**
 	 * Indicates that one or more OA reports were not written by the
 	 * hardware. This can happen for example if an MI_REPORT_PERF_COUNT
 	 * command collides with periodic sampling - which would be more likely
@@ -1421,7 +1488,25 @@ enum drm_i915_perf_record_type {
 	 */
 	DRM_I915_PERF_RECORD_OA_BUFFER_LOST = 3,
 
+	/**
+	 * A change in the sseu configuration happened for a particular
+	 * context.
+	 *
+	 * struct {
+	 *     struct drm_i915_perf_record_header header;
+	 *     { struct drm_i915_perf_sseu_change change; } && DRM_I915_PERF_PROP_SSEU_CHANGE
+	 * };
+	 */
+	DRM_I915_PERF_RECORD_SSEU_CHANGE = 4,
+
 	DRM_I915_PERF_RECORD_MAX /* non-ABI */
+};
+
+struct drm_i915_perf_sseu_change {
+	__u32 hw_id;
+	__u16 pad;
+	__u8 slice_mask;
+	__u8 subslice_mask;
 };
 
 #if defined(__cplusplus)
